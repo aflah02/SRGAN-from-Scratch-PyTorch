@@ -42,10 +42,39 @@ class Generator(nn.Module):
         self.upsamples = nn.Sequential(UpsampleBlock(num_channels, scale_factor=2), UpsampleBlock(num_channels,scale_factor=2))
         self.final = ConvBlock(num_channels, in_c, kernel_size=9, stride=1,padding=4)
     def forward(self,x):
-        initial = self.inital(x)
+        initial = self.initial(x)
         x = self.residuals(initial)
         x = self.convblock(x)+initial
         x = self.upsamples(x)
         return torch.tanh(self.final(x))
 class Discriminator(nn.Module):
-    pass
+    def __init__(self, in_c=3,features=[64,64,128,128,256,256,512,512]):
+        super().__init__()
+        blocks = []
+        for idx, feature in enumerate(features):
+            blocks.append(ConvBlock(in_c,feature,kernel_size=3,stride=1+idx%2,padding=1,use_act=True,use_bn=False if idx==0 else True,discriminator=True))
+            in_c = feature
+        self.blocks = nn.Sequential(*blocks)
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((6,6)),
+            nn.Flatten(),
+            nn.Linear(512*6*6,1024),
+            nn.LeakyReLU(0,inplace=True),
+            nn.Linear(1024,1)
+        )
+    def forward(self,x):
+        x = self.blocks(x)
+        return self.classifier(x)
+def test():
+    low_resolution = 24  # 96x96 -> 24x24
+    with torch.cuda.amp.autocast():
+        x = torch.randn((5, 3, low_resolution, low_resolution))
+        gen = Generator()
+        gen_out = gen(x)
+        disc = Discriminator()
+        disc_out = disc(gen_out)
+
+        print(gen_out.shape)
+        print(disc_out.shape)  
+if __name__ == "__main__":
+    test()
